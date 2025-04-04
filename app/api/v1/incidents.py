@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks,Query
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks,Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
 from typing import Annotated
@@ -15,9 +15,8 @@ router = APIRouter()
 
 @router.post("/", response_model=IncidentRead, status_code=status.HTTP_201_CREATED)
 async def create_incident(
-    *,
+    incident_in: Annotated[IncidentCreate, Body()],
     db: Annotated[AsyncSession, Depends(get_db)],
-    incident_in: Annotated[IncidentCreate, Depends()],
     background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_user)]
 ):
@@ -56,3 +55,29 @@ async def search_incidents(
 ):
     search_results = await search_service.search_incidents(q)
     return search_results
+
+
+# app/api/v1/incidents.py
+from uuid import UUID
+
+@router.patch("/{incident_id}", response_model=IncidentRead)
+async def update_incident(
+    incident_id: UUID,
+    incident_in: dict, # For simplicity, we'll use a dict, but a Schema is better
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    query = select(Incident).where(Incident.id == incident_id)
+    result = await db.execute(query)
+    db_incident = result.scalar_one_or_none()
+    
+    if not db_incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+
+    # Update fields
+    for key, value in incident_in.items():
+        setattr(db_incident, key, value)
+
+    await db.commit()
+    await db.refresh(db_incident)
+    return db_incident
